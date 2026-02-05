@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-EXTRA_P95 = ["p95_auth_request_link", "p95_tasks_create", "p95_tasks_list"]
+EXTRA_P95 = [
+    "p95_auth_request_link",
+    "p95_tasks_create",
+    "p95_tasks_list",
+    "p95_webhook_stripe",
+]
 
 def _get(d: dict[str, Any], path: list[str], default=None):
     cur: Any = d
@@ -28,6 +33,7 @@ def extract_row(p: Path) -> dict[str, Any] | None:
     p95 = _get(k6, ["metrics", "http_req_duration", "values", "p(95)"])
     rps = _get(k6, ["metrics", "http_reqs", "values", "rate"])
     fail_rate = _get(k6, ["metrics", "http_req_failed", "values", "rate"])
+    webhook_success = _get(k6, ["metrics", "webhook_success_rate", "values", "rate"])
 
     if p95 is None or rps is None:
         return None
@@ -48,6 +54,7 @@ def extract_row(p: Path) -> dict[str, Any] | None:
         "p95_ms": float(p95),
         "rps": float(rps),
         "fail_rate": float(fail_rate) if fail_rate is not None else None,
+        "webhook_success_rate": float(webhook_success) if webhook_success is not None else None,
         **extras,
     }
 
@@ -76,12 +83,13 @@ def main() -> int:
         rows.sort(key=lambda r: int(r["vus"]) if str(r["vus"]).isdigit() else 0)
 
     # print markdown table
-    print("| vus | duration | p95 (ms) | req/s | fail rate | git | run_id | file |")
-    print("|---:|:---:|---:|---:|---:|:---:|:---:|:---|")
+    print("| vus | duration | p95 (ms) | req/s | fail rate | webhook success | git | run_id | file |")
+    print("|---:|:---:|---:|---:|---:|---:|:---:|:---:|:---|")
     for r in rows:
         fr = "" if r["fail_rate"] is None else f'{r["fail_rate"]:.4f}'
+        ws = "" if r["webhook_success_rate"] is None else f'{r["webhook_success_rate"]:.4f}'
         print(
-            f'| {r["vus"]} | {r["duration"]} | {r["p95_ms"]:.2f} | {r["rps"]:.2f} | {fr} | {r["git_sha"]} | {r["run_id"]} | {r["file"]} |'
+            f'| {r["vus"]} | {r["duration"]} | {r["p95_ms"]:.2f} | {r["rps"]:.2f} | {fr} | {ws} | {r["git_sha"]} | {r["run_id"]} | {r["file"]} |'
         )
 
     return 0

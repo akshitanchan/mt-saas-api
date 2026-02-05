@@ -5,7 +5,9 @@ import { Trend, Rate } from "k6/metrics";
 const authReqLinkP95 = new Trend("p95_auth_request_link", true);
 const tasksCreateP95 = new Trend("p95_tasks_create", true);
 const tasksListP95 = new Trend("p95_tasks_list", true);
+const webhookStripeP95 = new Trend("p95_webhook_stripe", true);
 const failRate = new Rate("fail_rate");
+const webhookSuccessRate = new Rate("webhook_success_rate");
 
 export const options = {
   vus: __ENV.VUS ? parseInt(__ENV.VUS, 10) : 1,
@@ -23,6 +25,7 @@ export const options = {
     // per-endpoint latency (tune these if you want stricter/slacker)
     p95_tasks_create: ["p(95)<200"],
     p95_tasks_list: ["p(95)<200"],
+    webhook_success_rate: ["rate>0.99"],
   },
 };
 
@@ -175,6 +178,36 @@ export default function (data) {
   tasksListP95.add(r.timings.duration);
   failRate.add(r.status !== 200);
   check(r, { "task list 200": (x) => x.status === 200 });
+
+  // stripe webhook (every 5th iteration)
+  if (__ITER % 5 === 0) {
+    const eventId = `evt_k6_${__VU}_${__ITER}_${Date.now()}`;
+    const customerId = `cus_k6_${__VU}`;
+    r = withRetry(
+      () =>
+        postJson(
+          "/webhooks/stripe",
+          {
+            id: eventId,
+            type: "invoice.paid",
+            data: {
+              object: {
+                id: `in_k6_${__VU}_${__ITER}`,
+                customer: customerId,
+                subscription: `sub_k6_${__VU}`,
+                metadata: { org_id: orgId },
+              },
+            },
+          },
+          {},
+          { name: "webhook_stripe" }
+        ),
+      { tries: 6, baseSleep: 0.25 }
+    );
+    webhookStripeP95.add(r.timings.duration);
+    webhookSuccessRate.add(r.status === 200);
+    check(r, { "webhook 200": (x) => x.status === 200 });
+  }
 
   sleep(0.2);
 }

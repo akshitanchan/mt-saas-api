@@ -59,9 +59,6 @@ def list_tasks(
     ctx: OrgContext = Depends(require_perm("tasks:read")),
     db: Session = Depends(get_db),
 ) -> list[TaskOut]:
-    enforce_billing_writable(ctx.org)
-    if ctx.org.plan == "free":
-        enforce_free_limits(db, org_id, "tasks")
     project = db.scalar(select(Project).where(Project.id == project_id, Project.org_id == org_id))
     if project is None:
         raise HTTPException(status_code=404, detail="project not found")
@@ -95,8 +92,6 @@ def update_task(
     db: Session = Depends(get_db),
 ) -> TaskOut:
     enforce_billing_writable(ctx.org)
-    if ctx.org.plan == "free":
-        enforce_free_limits(db, org_id, "tasks")
     t = db.scalar(select(Task).where(Task.id == task_id, Task.org_id == org_id))
     if t is None:
         raise HTTPException(status_code=404, detail="task not found")
@@ -136,8 +131,6 @@ def delete_task(
     db: Session = Depends(get_db),
 ) -> dict:
     enforce_billing_writable(ctx.org)
-    if ctx.org.plan == "free":
-        enforce_free_limits(db, org_id, "tasks")
     t = db.scalar(select(Task).where(Task.id == task_id, Task.org_id == org_id))
     if t is None:
         raise HTTPException(status_code=404, detail="task not found")

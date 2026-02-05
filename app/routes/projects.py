@@ -35,10 +35,6 @@ def list_projects(
     ctx: OrgContext = Depends(require_perm("projects:read")),
     db: Session = Depends(get_db),
 ) -> list[ProjectOut]:
-    enforce_billing_writable(ctx.org)
-    if ctx.org.plan == "free":
-        enforce_free_limits(db, org_id, "tasks")
-
     q = select(Project).where(Project.org_id == org_id).order_by(Project.created_at.desc())
     rows = db.scalars(q).all()
     return [ProjectOut(id=r.id, org_id=r.org_id, name=r.name) for r in rows]
@@ -52,9 +48,6 @@ def update_project(
     db: Session = Depends(get_db),
 ) -> ProjectOut:
     enforce_billing_writable(ctx.org)
-    if ctx.org.plan == "free":
-        enforce_free_limits(db, org_id, "tasks")
-
     p = db.scalar(select(Project).where(Project.id == project_id, Project.org_id == org_id))
     if p is None:
         raise HTTPException(status_code=404, detail="project not found")
@@ -72,9 +65,6 @@ def delete_project(
     db: Session = Depends(get_db),
 ) -> dict:
     enforce_billing_writable(ctx.org)
-    if ctx.org.plan == "free":
-        enforce_free_limits(db, org_id, "tasks")
-
     p = db.scalar(select(Project).where(Project.id == project_id, Project.org_id == org_id))
     if p is None:
         raise HTTPException(status_code=404, detail="project not found")

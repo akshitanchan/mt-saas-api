@@ -4,6 +4,7 @@ import hmac
 import hashlib
 import json
 import time
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -70,7 +71,12 @@ def _verify_stripe_signature(payload_bytes: bytes, signature: str | None) -> Non
     if not any(hmac.compare_digest(expected, cand) for cand in v1_list):
         raise HTTPException(status_code=400, detail="invalid stripe-signature")
 
-def _find_org(db: Session, customer_id: str | None, sub_id: str | None) -> Org | None:
+def _find_org(
+    db: Session,
+    customer_id: str | None,
+    sub_id: str | None,
+    metadata: dict | None,
+) -> Org | None:
     if customer_id:
         org = db.scalar(select(Org).where(Org.stripe_customer_id == customer_id))
         if org:
@@ -79,6 +85,14 @@ def _find_org(db: Session, customer_id: str | None, sub_id: str | None) -> Org |
         org = db.scalar(select(Org).where(Org.stripe_subscription_id == sub_id))
         if org:
             return org
+    if metadata and isinstance(metadata, dict):
+        raw_org_id = metadata.get("org_id")
+        if raw_org_id:
+            try:
+                org_id = uuid.UUID(str(raw_org_id))
+            except Exception:
+                return None
+            return db.get(Org, org_id)
     return None
 
 def _map_stripe_sub_status(raw: str | None) -> SubscriptionStatus:
@@ -180,7 +194,7 @@ async def stripe_webhook(
                     "event_id": event_id,
                 }
 
-            org = db.scalar(select(Org).where(Org.stripe_customer_id == customer))
+            org = _find_org(db, customer, obj.get("id"), obj.get("metadata"))
             if not org:
                 existing.status = "ignored"
                 existing.processed_at = _now_utc()
@@ -219,7 +233,7 @@ async def stripe_webhook(
                     "event_id": event_id,
                 }
 
-            org = db.scalar(select(Org).where(Org.stripe_customer_id == customer))
+            org = _find_org(db, customer, obj.get("subscription"), obj.get("metadata"))
             if not org:
                 existing.status = "ignored"
                 existing.processed_at = _now_utc()

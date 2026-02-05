@@ -1,0 +1,17 @@
+services:
+  k6:
+    image: grafana/k6:latest
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      BASE_URL: ${BASE_URL:-http://api:8000}
+      VUS: ${VUS:-1}
+      DURATION: ${DURATION:-20s}
+      RUN_ID: ${RUN_ID:-local}
+      GIT_SHA: ${GIT_SHA:-nogit}
+      K6_SUMMARY_PATH: ${K6_SUMMARY_PATH:-/results/summary.json}
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./k6-results:/results
+    entrypoint: ["k6", "run", "/scripts/k6_smoke.js"]

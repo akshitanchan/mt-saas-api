@@ -74,3 +74,37 @@ test:
 
 contract:
 	$(COMPOSE) run --rm --no-deps -e RUN_MIGRATIONS=0 -e BASE_URL=$(BASE_URL) api pytest contract -q
+
+KIND_CLUSTER := mt-saas-api
+KUBE_NS := mt-saas-api
+IMAGE := ghcr.io/akshitanchan/mt-saas-api:dev
+METRICS_SERVER_VERSION := v0.9.0
+
+.PHONY: deploy smoke undeploy
+
+deploy:
+	kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/$(METRICS_SERVER_VERSION)/components.yaml
+	@if ! kubectl get deployment metrics-server -n kube-system -o jsonpath='{.spec.template.spec.containers[0].args}' | grep -q kubelet-insecure-tls; then \
+		kubectl patch deployment metrics-server -n kube-system --type=json \
+			-p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'; \
+	fi
+	kubectl wait --for=condition=Available deployment/metrics-server -n kube-system --timeout=180s
+	docker build -f docker/Dockerfile -t $(IMAGE) .
+	kind load docker-image $(IMAGE) --name $(KIND_CLUSTER)
+	kubectl apply -f deploy/namespace.yaml
+	kubectl apply -f deploy/configmap.yaml -f deploy/secret.yaml
+	kubectl apply -f deploy/postgres.yaml -f deploy/redis.yaml
+	kubectl rollout status statefulset/postgres -n $(KUBE_NS) --timeout=180s
+	kubectl rollout status deployment/redis -n $(KUBE_NS) --timeout=180s
+	kubectl delete job/alembic-migrate -n $(KUBE_NS) --ignore-not-found
+	kubectl apply -f deploy/migrate-job.yaml
+	kubectl wait --for=condition=complete job/alembic-migrate -n $(KUBE_NS) --timeout=180s
+	kubectl apply -f deploy/api.yaml -f deploy/hpa.yaml
+	kubectl rollout status deploy/api -n $(KUBE_NS) --timeout=180s
+	$(MAKE) smoke
+
+smoke:
+	docker run --rm --network kind -e RUN_MIGRATIONS=0 -e BASE_URL=http://$(KIND_CLUSTER)-control-plane:30080 $(IMAGE) pytest contract -q
+
+undeploy:
+	kubectl delete -f $(filter-out deploy/kind.yaml,$(wildcard deploy/*.yaml)) --ignore-not-found

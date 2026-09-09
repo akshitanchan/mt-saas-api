@@ -1,0 +1,87 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  IMAGE: ghcr.io/akshitanchan/mt-saas-api
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: run test suite
+        run: make test
+
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      # build once and export as a tar so both the pr path and the push path
+      # reuse the same image instead of building twice
+      - name: build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          outputs: type=docker,dest=/tmp/image.tar
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image
+          path: /tmp/image.tar
+
+      - name: login to ghcr
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: push image
+        if: github.event_name == 'push'
+        run: |
+          docker load --input /tmp/image.tar
+          docker push ${{ env.IMAGE }}:${{ github.sha }}
+          docker push ${{ env.IMAGE }}:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: [test, build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: image
+          path: /tmp
+
+      # make deploy rebuilds the image locally again before the kind load,
+      # so this load/tag only keeps the artifact meaningful for the pr path;
+      # it is not what actually reaches the cluster
+      - name: load image
+        run: |
+          docker load --input /tmp/image.tar
+          docker tag ${{ env.IMAGE }}:${{ github.sha }} ${{ env.IMAGE }}:dev
+
+      - uses: helm/kind-action@v1.15.0
+        with:
+          cluster_name: mt-saas-api
+          config: deploy/kind.yaml
+
+      - name: deploy to cluster
+        run: make deploy

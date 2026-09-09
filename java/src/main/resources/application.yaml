@@ -1,0 +1,42 @@
+app:
+  env: ${APP_ENV:dev}
+  base-url: ${BASE_URL:http://localhost:8000}
+  jwt:
+    secret: ${JWT_SECRET:dev-secret-change-me}
+    issuer: ${JWT_ISSUER:mt-saas-api}
+    audience: ${JWT_AUDIENCE:mt-saas-api}
+    expires-minutes: ${JWT_EXPIRES_MINUTES:60}
+  magic-link:
+    pepper: ${MAGIC_LINK_PEPPER:dev-pepper-change-me}
+    expires-minutes: ${MAGIC_LINK_EXPIRES_MINUTES:15}
+  stripe:
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    auth-request-link-per-min: ${RATE_LIMIT_AUTH_REQUEST_LINK_PER_MIN:20}
+    auth-redeem-per-min: ${RATE_LIMIT_AUTH_REDEEM_PER_MIN:30}
+    webhooks-per-min: ${RATE_LIMIT_WEBHOOKS_PER_MIN:60}
+
+server:
+  port: ${APP_PORT:8000}
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/app_java}
+    username: ${SPRING_DATASOURCE_USERNAME:app}
+    password: ${SPRING_DATASOURCE_PASSWORD:app}
+  data:
+    redis:
+      url: ${SPRING_DATA_REDIS_URL:redis://localhost:6379/0}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+  flyway:
+    locations: classpath:db/migration

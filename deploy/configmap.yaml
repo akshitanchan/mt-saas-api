@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: mt-saas-api
+data:
+  APP_ENV: "dev"
+  BASE_URL: "http://localhost:8080"
+  REDIS_URL: "redis://redis:6379/0"
+  JWT_ISSUER: "mt-saas-api"
+  JWT_AUDIENCE: "mt-saas-api"
+  JWT_EXPIRES_MINUTES: "60"
+  MAGIC_LINK_EXPIRES_MINUTES: "15"
+  RUN_MIGRATIONS: "0"
+  # raised so a nodeport (every request looks like it comes from the node ip) doesn't trip the limiter
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_AUTH_REQUEST_LINK_PER_MIN: "600"
+  RATE_LIMIT_AUTH_REDEEM_PER_MIN: "600"
+  RATE_LIMIT_WEBHOOKS_PER_MIN: "6000"

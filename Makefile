@@ -7,7 +7,9 @@ COMPOSE := docker compose -p $(PROJECT)
 API_BASE := http://127.0.0.1:8000
 READY_URL := $(API_BASE)/ready
 
-.PHONY: up down reset wait logs api-shell seed demo k6 test
+BASE_URL ?= http://api:8000
+
+.PHONY: up down reset wait logs api-shell seed demo k6 test contract
 
 up:
 	$(COMPOSE) up --build -d --remove-orphans
@@ -69,3 +71,6 @@ test:
 	docker compose -p mt-saas-api-test -f docker-compose.test.yml down -v --remove-orphans
 	docker compose -p mt-saas-api-test -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from tests
 	docker compose -p mt-saas-api-test -f docker-compose.test.yml down -v --remove-orphans
+
+contract:
+	$(COMPOSE) run --rm --no-deps -e RUN_MIGRATIONS=0 -e BASE_URL=$(BASE_URL) api pytest contract -q

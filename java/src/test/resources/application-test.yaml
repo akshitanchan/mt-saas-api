@@ -1,0 +1,5 @@
+# every test shares one redis container and one loopback client ip, so a real per-ip
+# limit would trip across unrelated tests; the two limiter tests re-enable it themselves
+app:
+  rate-limit:
+    enabled: false

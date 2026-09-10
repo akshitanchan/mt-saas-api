@@ -1,6 +1,7 @@
 package com.akshitanchan.saas.auth;
 
 import com.akshitanchan.saas.config.AppProperties;
+import com.akshitanchan.saas.ratelimit.RateLimiter;
 import com.akshitanchan.saas.web.ApiException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -22,21 +23,25 @@ public class AuthController {
     private final AuthMagicLinkRepository magicLinkRepository;
     private final JwtService jwtService;
     private final AppProperties properties;
+    private final RateLimiter rateLimiter;
 
     public AuthController(
             UserRepository userRepository,
             AuthMagicLinkRepository magicLinkRepository,
             JwtService jwtService,
-            AppProperties properties) {
+            AppProperties properties,
+            RateLimiter rateLimiter) {
         this.userRepository = userRepository;
         this.magicLinkRepository = magicLinkRepository;
         this.jwtService = jwtService;
         this.properties = properties;
+        this.rateLimiter = rateLimiter;
     }
 
     @PostMapping("/request-link")
     @Transactional
     public RequestLinkResponse requestLink(@Valid @RequestBody RequestLinkRequest body) {
+        rateLimiter.check("auth:request_link", properties.rateLimit().authRequestLinkPerMin());
         String email = body.email().toLowerCase().strip();
 
         User user = userRepository.findByEmail(email)
@@ -56,6 +61,7 @@ public class AuthController {
     @PostMapping("/redeem")
     @Transactional
     public AccessTokenResponse redeem(@Valid @RequestBody RedeemRequest body) {
+        rateLimiter.check("auth:redeem", properties.rateLimit().authRedeemPerMin());
         String token = body.token().strip();
         String tokenHash = MagicLinkTokens.hash(properties.magicLink().pepper(), token);
         OffsetDateTime now = OffsetDateTime.now();

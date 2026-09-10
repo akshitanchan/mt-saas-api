@@ -1,6 +1,7 @@
 package com.akshitanchan.saas;
 
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -12,7 +13,10 @@ import org.testcontainers.utility.DockerImageName;
 // lifecycle) raced with spring's test-context cache, which could leave a later test class pointed at
 // an already-stopped container from an earlier class. testcontainers' ryuk reaper still cleans these
 // up when the jvm exits.
+// the "test" profile layers src/test/resources/application-test.yaml on top of the main config
+// (profile documents are always additive, never a replacement).
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("test")
 public abstract class AbstractIntegrationTest {
 
     private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");

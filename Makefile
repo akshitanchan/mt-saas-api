@@ -103,8 +103,10 @@ deploy:
 	kubectl apply -f deploy/migrate-job.yaml
 	kubectl wait --for=condition=complete job/alembic-migrate -n $(KUBE_NS) --timeout=180s
 	kubectl apply -f deploy/api.yaml -f deploy/hpa.yaml
+	kubectl rollout restart deployment/api -n $(KUBE_NS)
 	kubectl rollout status deploy/api -n $(KUBE_NS) --timeout=180s
 	kubectl apply -f deploy/api-java.yaml -f deploy/hpa-java.yaml
+	kubectl rollout restart deployment/api-java -n $(KUBE_NS)
 	kubectl rollout status deploy/api-java -n $(KUBE_NS) --timeout=240s
 	$(MAKE) smoke
 
@@ -113,7 +115,8 @@ smoke:
 	docker run --rm --network kind -e RUN_MIGRATIONS=0 -e BASE_URL=http://$(KIND_CLUSTER)-control-plane:30081 $(IMAGE) pytest contract -q
 
 undeploy:
-	kubectl delete $(addprefix -f ,$(filter-out deploy/kind.yaml,$(wildcard deploy/*.yaml))) --ignore-not-found
+	# namespace delete cascades everything deployed into it; metrics-server is cluster-scoped and left in place
+	kubectl delete namespace $(KUBE_NS) --ignore-not-found
 
 SERVICE ?= python
 BENCH_PORT ?= $(if $(filter java,$(SERVICE)),30081,30080)
@@ -156,14 +159,14 @@ bench:
 	done; \
 	python3 scripts/report_k6.py --dir bench/k6/$(SERVICE) --latest
 
-# sustained load at HPA_VUS for HPA_DURATION to watch the hpa scale the api deployment;
+# sustained load at HPA_VUS for HPA_DURATION to watch the hpa scale $(BENCH_DEPLOY);
 # samples ready replicas and the hpa line every 10s (metrics-server and the hpa both sync on 15s).
 hpa:
 	@mkdir -p bench/k6/hpa
 	@RUN_ID="$$(date -u +%Y%m%d_%H%M%S)"; \
 	GIT_SHA="$$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"; \
-	BEFORE="$$(kubectl get deploy api -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; BEFORE="$${BEFORE:-0}"; \
-	echo "hpa run_id=$$RUN_ID git_sha=$$GIT_SHA vus=$(HPA_VUS) duration=$(HPA_DURATION) ready_before=$$BEFORE"; \
+	BEFORE="$$(kubectl get deploy $(BENCH_DEPLOY) -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; BEFORE="$${BEFORE:-0}"; \
+	echo "hpa run_id=$$RUN_ID git_sha=$$GIT_SHA service=$(SERVICE) vus=$(HPA_VUS) duration=$(HPA_DURATION) ready_before=$$BEFORE"; \
 	docker run --rm --network kind -v $(PWD)/scripts:/scripts:ro -v $(PWD)/bench/k6/hpa:/results \
 		-e BASE_URL=http://$(KIND_CLUSTER)-control-plane:$(BENCH_PORT) -e VUS=$(HPA_VUS) -e DURATION=$(HPA_DURATION) \
 		-e RUN_ID=$$RUN_ID -e GIT_SHA=$$GIT_SHA -e K6_SUMMARY_PATH=/results/$${RUN_ID}_hpa_vus$(HPA_VUS).json \
@@ -171,15 +174,15 @@ hpa:
 	K6_PID=$$!; \
 	MAX_READY=$$BEFORE; \
 	while kill -0 $$K6_PID 2>/dev/null; do \
-		CUR="$$(kubectl get deploy api -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; CUR="$${CUR:-0}"; \
-		HPA_LINE="$$(kubectl get hpa api -n $(KUBE_NS) --no-headers)"; \
+		CUR="$$(kubectl get deploy $(BENCH_DEPLOY) -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; CUR="$${CUR:-0}"; \
+		HPA_LINE="$$(kubectl get hpa $(BENCH_DEPLOY) -n $(KUBE_NS) --no-headers)"; \
 		echo "sample ready=$$CUR hpa=[$$HPA_LINE]"; \
 		if [ "$$CUR" -gt "$$MAX_READY" ]; then MAX_READY=$$CUR; fi; \
 		sleep 10; \
 	done; \
 	wait $$K6_PID; \
 	K6_EXIT=$$?; \
-	FINAL_HPA="$$(kubectl get hpa api -n $(KUBE_NS) --no-headers)"; \
+	FINAL_HPA="$$(kubectl get hpa $(BENCH_DEPLOY) -n $(KUBE_NS) --no-headers)"; \
 	echo "hpa result: before=$$BEFORE max_ready=$$MAX_READY final_hpa=[$$FINAL_HPA] k6_exit=$$K6_EXIT"; \
 	if [ $$K6_EXIT -ne 0 ] && [ $$K6_EXIT -ne 99 ]; then \
 		echo "k6 failed with unexpected exit code $$K6_EXIT" >&2; \

@@ -64,10 +64,6 @@ public class Org {
         return name;
     }
 
-    public void setName(String name) {
-        this.name = name;
-    }
-
     public Plan getPlan() {
         return plan;
     }
@@ -106,9 +102,5 @@ public class Org {
 
     public OffsetDateTime getCurrentPeriodEnd() {
         return currentPeriodEnd;
-    }
-
-    public void setCurrentPeriodEnd(OffsetDateTime currentPeriodEnd) {
-        this.currentPeriodEnd = currentPeriodEnd;
     }
 }

@@ -9,7 +9,6 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -86,20 +85,5 @@ class ProjectEndpointTest extends OrgScopedTestSupport {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(response.getBody()).isEqualTo(Map.of("detail", "forbidden"));
-    }
-
-    private static int indexOfId(List<Map<String, Object>> items, String id) {
-        for (int i = 0; i < items.size(); i++) {
-            if (id.equals(items.get(i).get("id"))) {
-                return i;
-            }
-        }
-        throw new AssertionError("id " + id + " not found in " + items);
-    }
-
-    private HttpHeaders authHeaders(String jwt) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + jwt);
-        return headers;
     }
 }

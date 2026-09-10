@@ -53,10 +53,6 @@ public class Membership {
         return role;
     }
 
-    public void setRole(Role role) {
-        this.role = role;
-    }
-
     public OffsetDateTime getCreatedAt() {
         return createdAt;
     }

@@ -3,6 +3,7 @@ package com.akshitanchan.saas;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -106,5 +107,22 @@ public abstract class OrgScopedTestSupport extends AbstractIntegrationTest {
             headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + jwt);
         }
         return headers;
+    }
+
+    // used by the *EndpointTest list-ordering tests, which call restTemplate.exchange
+    // directly to get a List<Map<...>> body rather than the Map-returning get(...) above
+    protected HttpHeaders authHeaders(String jwt) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + jwt);
+        return headers;
+    }
+
+    protected static int indexOfId(List<Map<String, Object>> items, String id) {
+        for (int i = 0; i < items.size(); i++) {
+            if (id.equals(items.get(i).get("id"))) {
+                return i;
+            }
+        }
+        throw new AssertionError("id " + id + " not found in " + items);
     }
 }

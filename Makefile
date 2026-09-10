@@ -117,6 +117,7 @@ undeploy:
 
 SERVICE ?= python
 BENCH_PORT ?= $(if $(filter java,$(SERVICE)),30081,30080)
+BENCH_DEPLOY ?= $(if $(filter java,$(SERVICE)),api-java,api)
 BENCH_DURATION ?= 20s
 HPA_VUS ?= 30
 HPA_DURATION ?= 120s
@@ -131,7 +132,7 @@ bench:
 	GIT_SHA="$$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"; \
 	echo "bench run_id=$$RUN_ID git_sha=$$GIT_SHA service=$(SERVICE) port=$(BENCH_PORT)"; \
 	for V in 1 5 10; do \
-		BEFORE="$$(kubectl get deploy api -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; BEFORE="$${BEFORE:-0}"; \
+		BEFORE="$$(kubectl get deploy $(BENCH_DEPLOY) -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; BEFORE="$${BEFORE:-0}"; \
 		echo "==> vus=$$V ready_before=$$BEFORE"; \
 		docker run --rm --network kind -v $(PWD)/scripts:/scripts:ro -v $(PWD)/bench/k6/$(SERVICE):/results \
 			-e BASE_URL=http://$(KIND_CLUSTER)-control-plane:$(BENCH_PORT) -e VUS=$$V -e DURATION=$(BENCH_DURATION) \
@@ -142,12 +143,12 @@ bench:
 			echo "k6 failed with unexpected exit code $$K6_EXIT" >&2; \
 			exit $$K6_EXIT; \
 		fi; \
-		AFTER="$$(kubectl get deploy api -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; AFTER="$${AFTER:-0}"; \
+		AFTER="$$(kubectl get deploy $(BENCH_DEPLOY) -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; AFTER="$${AFTER:-0}"; \
 		echo "==> vus=$$V ready_after=$$AFTER k6_exit=$$K6_EXIT"; \
-		echo "waiting for deploy/api to settle back to 1 ready replica (max 90s)..."; \
+		echo "waiting for deploy/$(BENCH_DEPLOY) to settle back to 1 ready replica (max 90s)..."; \
 		WAITED=0; \
 		while [ "$$WAITED" -lt 90 ]; do \
-			CUR="$$(kubectl get deploy api -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; CUR="$${CUR:-0}"; \
+			CUR="$$(kubectl get deploy $(BENCH_DEPLOY) -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; CUR="$${CUR:-0}"; \
 			if [ "$$CUR" = "1" ]; then break; fi; \
 			sleep 5; \
 			WAITED=$$((WAITED + 5)); \

@@ -14,6 +14,8 @@ services:
       retries: 30
     volumes:
       - db_data:/var/lib/postgresql/data
+      # only runs against a fresh volume, so `make reset` is what picks up a new app_java database
+      - ./docker/init-app-java-db.sql:/docker-entrypoint-initdb.d/init-app-java-db.sql:ro
 
   redis:
     image: redis:7
@@ -52,6 +54,31 @@ services:
       timeout: 2s
       retries: 30
       start_period: 15s
+
+  api-java:
+    build:
+      context: java
+      dockerfile: Dockerfile
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/app_java
+      SPRING_DATASOURCE_USERNAME: app
+      SPRING_DATASOURCE_PASSWORD: app
+      SPRING_DATA_REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: dev-secret
+      MAGIC_LINK_PEPPER: dev-pepper
+    ports:
+      - "8001:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 30
+      start_period: 30s
 
 volumes:
   db_data:

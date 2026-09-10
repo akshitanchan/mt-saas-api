@@ -7,6 +7,7 @@ data:
   APP_ENV: "dev"
   BASE_URL: "http://localhost:8080"
   REDIS_URL: "redis://redis:6379/0"
+  SPRING_DATA_REDIS_URL: "redis://redis:6379/0"
   JWT_ISSUER: "mt-saas-api"
   JWT_AUDIENCE: "mt-saas-api"
   JWT_EXPIRES_MINUTES: "60"

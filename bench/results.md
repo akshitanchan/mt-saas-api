@@ -18,6 +18,7 @@ Java vus 5 then started at 2 ready replicas while that scale-up was still unwind
 Python vus 10 rose from 1 to 4 ready replicas with zero failed requests this run, unlike the earlier cluster instance where the same level produced a 0.66% failure rate.
 The java rows follow a discarded 20s warm-up pass at 5 vus, run beforehand so a cold JIT would not skew the first row.
 Under 30 vus for 120s the api deployment went from 1 to 4 ready replicas.
+The 10 s samples printed by make hpa peaked at 3 ready replicas, and the deployment's scaling events show a brief peak of 5 between samples.
 The api deployment spent most of the run at zero ready replicas as the sole 50m-request pod failed readiness and liveness checks, scaling to 4 replicas only near the end.
 It still breached every threshold and exited 99.
 The original pod restarted three times on liveness failures against /health at the 500m cpu limit.

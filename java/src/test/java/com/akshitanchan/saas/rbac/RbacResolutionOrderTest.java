@@ -161,4 +161,106 @@ class RbacResolutionOrderTest extends OrgScopedTestSupport {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(response.getBody()).isEqualTo(Map.of("detail", "forbidden"));
     }
+
+    @Test
+    void adminCanViewTheOrgTheyBelongTo() {
+        String ownerJwt = login(uniqueEmail("owner"));
+        String orgId = createOrg(ownerJwt, "acme");
+        String adminJwt = inviteAndLogin(ownerJwt, orgId, "admin");
+
+        ResponseEntity<Map<String, Object>> response = get("/orgs/" + orgId, adminJwt);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void adminCanCreateAProject() {
+        String ownerJwt = login(uniqueEmail("owner"));
+        String orgId = createOrg(ownerJwt, "acme");
+        String adminJwt = inviteAndLogin(ownerJwt, orgId, "admin");
+
+        ResponseEntity<Map<String, Object>> response = post("/orgs/" + orgId + "/projects", adminJwt, Map.of("name", "p-admin"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void adminCanReadProjectsInTheirOrg() {
+        String ownerJwt = login(uniqueEmail("owner"));
+        String orgId = createOrg(ownerJwt, "acme");
+        createProject(ownerJwt, orgId, "proj");
+        String adminJwt = inviteAndLogin(ownerJwt, orgId, "admin");
+
+        ResponseEntity<String> response = getStatus("/orgs/" + orgId + "/projects", adminJwt);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void memberCannotUpdateAProject() {
+        String ownerJwt = login(uniqueEmail("owner"));
+        String orgId = createOrg(ownerJwt, "acme");
+        String projectId = createProject(ownerJwt, orgId, "proj");
+        String memberJwt = inviteAndLogin(ownerJwt, orgId, "member");
+
+        ResponseEntity<Map<String, Object>> response = patch(
+                "/orgs/" + orgId + "/projects/" + projectId, memberJwt, Map.of("name", "hacked"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).isEqualTo(Map.of("detail", "forbidden"));
+    }
+
+    @Test
+    void adminCanCreateATask() {
+        String ownerJwt = login(uniqueEmail("owner"));
+        String orgId = createOrg(ownerJwt, "acme");
+        String projectId = createProject(ownerJwt, orgId, "proj");
+        String adminJwt = inviteAndLogin(ownerJwt, orgId, "admin");
+
+        Map<String, Object> response = createTask(adminJwt, orgId, projectId, Map.of("title", "admin-made"));
+
+        assertThat(response.get("title")).isEqualTo("admin-made");
+    }
+
+    @Test
+    void adminCanReadTasks() {
+        String ownerJwt = login(uniqueEmail("owner"));
+        String orgId = createOrg(ownerJwt, "acme");
+        String projectId = createProject(ownerJwt, orgId, "proj");
+        createTask(ownerJwt, orgId, projectId, Map.of("title", "t"));
+        String adminJwt = inviteAndLogin(ownerJwt, orgId, "admin");
+
+        ResponseEntity<String> response = getStatus("/orgs/" + orgId + "/projects/" + projectId + "/tasks", adminJwt);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void adminCanUpdateATaskTheyDidNotCreateOrGetAssigned() {
+        String ownerJwt = login(uniqueEmail("owner"));
+        String orgId = createOrg(ownerJwt, "acme");
+        String projectId = createProject(ownerJwt, orgId, "proj");
+        String taskId = (String) createTask(ownerJwt, orgId, projectId, Map.of("title", "owners-task")).get("id");
+        String adminJwt = inviteAndLogin(ownerJwt, orgId, "admin");
+
+        ResponseEntity<Map<String, Object>> response = patch(
+                "/orgs/" + orgId + "/tasks/" + taskId, adminJwt, Map.of("status", "done"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().get("status")).isEqualTo("done");
+    }
+
+    @Test
+    void adminCanDeleteATask() {
+        String ownerJwt = login(uniqueEmail("owner"));
+        String orgId = createOrg(ownerJwt, "acme");
+        String projectId = createProject(ownerJwt, orgId, "proj");
+        String taskId = (String) createTask(ownerJwt, orgId, projectId, Map.of("title", "t")).get("id");
+        String adminJwt = inviteAndLogin(ownerJwt, orgId, "admin");
+
+        ResponseEntity<Map<String, Object>> response = delete("/orgs/" + orgId + "/tasks/" + taskId, adminJwt);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isEqualTo(Map.of("deleted", true));
+    }
 }

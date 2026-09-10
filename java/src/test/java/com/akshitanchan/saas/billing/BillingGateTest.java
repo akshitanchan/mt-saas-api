@@ -3,9 +3,15 @@ package com.akshitanchan.saas.billing;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.akshitanchan.saas.OrgScopedTestSupport;
+import com.akshitanchan.saas.auth.User;
+import com.akshitanchan.saas.auth.UserRepository;
 import com.akshitanchan.saas.orgs.Org;
 import com.akshitanchan.saas.orgs.OrgRepository;
 import com.akshitanchan.saas.orgs.SubscriptionStatus;
+import com.akshitanchan.saas.tasks.Task;
+import com.akshitanchan.saas.tasks.TaskRepository;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -17,6 +23,12 @@ class BillingGateTest extends OrgScopedTestSupport {
 
     @Autowired
     private OrgRepository orgRepository;
+
+    @Autowired
+    private TaskRepository taskRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     @Test
     void freePlanProjectLimitBlocksTheFourthCreate() {
@@ -47,6 +59,28 @@ class BillingGateTest extends OrgScopedTestSupport {
                 "/orgs/" + orgId + "/invites", jwt, Map.of("email", uniqueEmail("overflow"), "role", "member"));
         assertThat(blocked.getStatusCode()).isEqualTo(HttpStatus.PAYMENT_REQUIRED);
         assertThat(blocked.getBody()).isEqualTo(Map.of("detail", "free_plan_member_limit"));
+    }
+
+    @Test
+    void freePlanTaskLimitBlocksThe101stCreate() {
+        String email = uniqueEmail("owner");
+        String jwt = login(email);
+        String orgId = createOrg(jwt, "acme");
+        String projectId = createProject(jwt, orgId, "proj");
+        UUID ownerId = userRepository.findByEmail(email).orElseThrow().getId();
+
+        // seed 100 tasks directly: driving this through 100 http round trips would only
+        // slow the suite down without exercising anything the repository insert doesn't
+        List<Task> tasks = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            tasks.add(new Task(UUID.fromString(orgId), UUID.fromString(projectId), "t" + i, ownerId));
+        }
+        taskRepository.saveAll(tasks);
+
+        ResponseEntity<Map<String, Object>> blocked = post(
+                "/orgs/" + orgId + "/projects/" + projectId + "/tasks", jwt, Map.of("title", "t100"));
+        assertThat(blocked.getStatusCode()).isEqualTo(HttpStatus.PAYMENT_REQUIRED);
+        assertThat(blocked.getBody()).isEqualTo(Map.of("detail", "free_plan_task_limit"));
     }
 
     @Test

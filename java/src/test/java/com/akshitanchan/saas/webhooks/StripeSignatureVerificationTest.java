@@ -38,6 +38,16 @@ class StripeSignatureVerificationTest extends OrgScopedTestSupport {
     }
 
     @Test
+    void missingSignatureHeaderIsRejectedWhenSecretIsConfigured() {
+        byte[] raw = unhandledEventPayload();
+
+        ResponseEntity<Map<String, Object>> response = postRaw(raw, null);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isEqualTo(Map.of("detail", "missing stripe-signature"));
+    }
+
+    @Test
     void invalidSignatureIsRejected() {
         byte[] raw = unhandledEventPayload();
         String badHeader = "t=" + Instant.now().getEpochSecond() + ",v1=" + "0".repeat(64);
@@ -78,7 +88,9 @@ class StripeSignatureVerificationTest extends OrgScopedTestSupport {
     private ResponseEntity<Map<String, Object>> postRaw(byte[] body, String signatureHeader) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("stripe-signature", signatureHeader);
+        if (signatureHeader != null) {
+            headers.set("stripe-signature", signatureHeader);
+        }
         return restTemplate.exchange("/webhooks/stripe", HttpMethod.POST, new HttpEntity<>(body, headers), MAP_BODY);
     }
 }

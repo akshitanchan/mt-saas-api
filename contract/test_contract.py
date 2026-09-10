@@ -4,6 +4,7 @@ import json
 import os
 import time
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -35,6 +36,23 @@ def post_webhook(client, payload: dict | None, *, raw: bytes | None = None, sign
     if extra_headers:
         headers.update(extra_headers)
     return client.post("/webhooks/stripe", content=body, headers=headers)
+
+# contract parity
+
+def test_openapi_paths_match_the_checked_in_contract(client):
+    for path in ("/openapi.json", "/v3/api-docs"):
+        r = client.get(path)
+        if r.status_code == 200:
+            break
+    else:
+        pytest.fail("neither /openapi.json nor /v3/api-docs returned a document")
+
+    live_paths = {(path, method) for path, methods in r.json()["paths"].items() for method in methods}
+
+    contract = json.loads((Path(__file__).parent / "openapi.json").read_text())
+    contract_paths = {(path, method) for path, methods in contract["paths"].items() for method in methods}
+
+    assert live_paths == contract_paths
 
 # health
 

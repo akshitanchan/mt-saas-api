@@ -108,3 +108,73 @@ smoke:
 
 undeploy:
 	kubectl delete -f $(filter-out deploy/kind.yaml,$(wildcard deploy/*.yaml)) --ignore-not-found
+
+SERVICE ?= python
+BENCH_PORT ?= $(if $(filter java,$(SERVICE)),30081,30080)
+BENCH_DURATION ?= 20s
+HPA_VUS ?= 30
+HPA_DURATION ?= 120s
+
+.PHONY: bench hpa
+
+# runs k6 at vus 1 5 10 against the cluster over the kind docker network, recording
+# ready replicas before/after each level so hpa scaling during the run is visible.
+bench:
+	@mkdir -p bench/k6/$(SERVICE)
+	@RUN_ID="$$(date -u +%Y%m%d_%H%M%S)"; \
+	GIT_SHA="$$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"; \
+	echo "bench run_id=$$RUN_ID git_sha=$$GIT_SHA service=$(SERVICE) port=$(BENCH_PORT)"; \
+	for V in 1 5 10; do \
+		BEFORE="$$(kubectl get deploy api -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; BEFORE="$${BEFORE:-0}"; \
+		echo "==> vus=$$V ready_before=$$BEFORE"; \
+		docker run --rm --network kind -v $(PWD)/scripts:/scripts:ro -v $(PWD)/bench/k6/$(SERVICE):/results \
+			-e BASE_URL=http://$(KIND_CLUSTER)-control-plane:$(BENCH_PORT) -e VUS=$$V -e DURATION=$(BENCH_DURATION) \
+			-e RUN_ID=$$RUN_ID -e GIT_SHA=$$GIT_SHA -e K6_SUMMARY_PATH=/results/$${RUN_ID}_vus$${V}.json \
+			grafana/k6:latest run /scripts/k6_smoke.js; \
+		K6_EXIT=$$?; \
+		if [ $$K6_EXIT -ne 0 ] && [ $$K6_EXIT -ne 99 ]; then \
+			echo "k6 failed with unexpected exit code $$K6_EXIT" >&2; \
+			exit $$K6_EXIT; \
+		fi; \
+		AFTER="$$(kubectl get deploy api -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; AFTER="$${AFTER:-0}"; \
+		echo "==> vus=$$V ready_after=$$AFTER k6_exit=$$K6_EXIT"; \
+		echo "waiting for deploy/api to settle back to 1 ready replica (max 90s)..."; \
+		WAITED=0; \
+		while [ "$$WAITED" -lt 90 ]; do \
+			CUR="$$(kubectl get deploy api -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; CUR="$${CUR:-0}"; \
+			if [ "$$CUR" = "1" ]; then break; fi; \
+			sleep 5; \
+			WAITED=$$((WAITED + 5)); \
+		done; \
+	done; \
+	python3 scripts/report_k6.py --dir bench/k6/$(SERVICE) --latest
+
+# sustained load at HPA_VUS for HPA_DURATION to watch the hpa scale the api deployment;
+# samples ready replicas and the hpa line every 10s (metrics-server and the hpa both sync on 15s).
+hpa:
+	@mkdir -p bench/k6/hpa
+	@RUN_ID="$$(date -u +%Y%m%d_%H%M%S)"; \
+	GIT_SHA="$$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"; \
+	BEFORE="$$(kubectl get deploy api -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; BEFORE="$${BEFORE:-0}"; \
+	echo "hpa run_id=$$RUN_ID git_sha=$$GIT_SHA vus=$(HPA_VUS) duration=$(HPA_DURATION) ready_before=$$BEFORE"; \
+	docker run --rm --network kind -v $(PWD)/scripts:/scripts:ro -v $(PWD)/bench/k6/hpa:/results \
+		-e BASE_URL=http://$(KIND_CLUSTER)-control-plane:$(BENCH_PORT) -e VUS=$(HPA_VUS) -e DURATION=$(HPA_DURATION) \
+		-e RUN_ID=$$RUN_ID -e GIT_SHA=$$GIT_SHA -e K6_SUMMARY_PATH=/results/$${RUN_ID}_hpa_vus$(HPA_VUS).json \
+		grafana/k6:latest run /scripts/k6_smoke.js & \
+	K6_PID=$$!; \
+	MAX_READY=$$BEFORE; \
+	while kill -0 $$K6_PID 2>/dev/null; do \
+		CUR="$$(kubectl get deploy api -n $(KUBE_NS) -o jsonpath='{.status.readyReplicas}')"; CUR="$${CUR:-0}"; \
+		HPA_LINE="$$(kubectl get hpa api -n $(KUBE_NS) --no-headers)"; \
+		echo "sample ready=$$CUR hpa=[$$HPA_LINE]"; \
+		if [ "$$CUR" -gt "$$MAX_READY" ]; then MAX_READY=$$CUR; fi; \
+		sleep 10; \
+	done; \
+	wait $$K6_PID; \
+	K6_EXIT=$$?; \
+	FINAL_HPA="$$(kubectl get hpa api -n $(KUBE_NS) --no-headers)"; \
+	echo "hpa result: before=$$BEFORE max_ready=$$MAX_READY final_hpa=[$$FINAL_HPA] k6_exit=$$K6_EXIT"; \
+	if [ $$K6_EXIT -ne 0 ] && [ $$K6_EXIT -ne 99 ]; then \
+		echo "k6 failed with unexpected exit code $$K6_EXIT" >&2; \
+		exit $$K6_EXIT; \
+	fi
